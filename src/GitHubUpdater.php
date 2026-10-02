@@ -94,19 +94,96 @@ class GitHubUpdater {
 			return $result;
 		}
 
-		return (object) array(
+		// Single source of truth for the requirements and the description: the plugin header.
+		$header = get_file_data(
+			JMWV_UM_FILE,
+			array(
+				'description'  => 'Description',
+				'requires'     => 'Requires at least',
+				'requires_php' => 'Requires PHP',
+			)
+		);
+
+		$info = array(
 			'name'          => 'JMWV Updates Manager',
 			'slug'          => self::SLUG,
 			'version'       => $release['version'],
 			'author'        => '<a href="https://jmoorewv.com">Jonathan Moore</a>',
 			'homepage'      => 'https://github.com/' . self::REPO,
+			'requires'      => $header['requires'],
+			'requires_php'  => $header['requires_php'],
 			'download_link' => $release['package'],
 			'icons'         => $this->icons(),
 			'banners'       => $this->banners(),
 			'sections'      => array(
-				'changelog' => '' !== $release['notes'] ? wpautop( esc_html( $release['notes'] ) ) : '<p>' . esc_html__( 'See the release page on GitHub.', 'jmwv-updates-manager' ) . '</p>',
+				'description'  => '<p>' . esc_html( $header['description'] ) . '</p>',
+				'installation' => '<ol><li>'
+					. sprintf(
+						/* translators: %s: link to the latest GitHub release. */
+						esc_html__( 'Download jmwv-updates-manager.zip from the %s.', 'jmwv-updates-manager' ),
+						'<a href="https://github.com/' . self::REPO . '/releases/latest">' . esc_html__( 'latest release', 'jmwv-updates-manager' ) . '</a>'
+					)
+					. '</li><li>' . esc_html__( 'In WordPress, go to Plugins > Add New > Upload Plugin, choose the zip and install it.', 'jmwv-updates-manager' )
+					. '</li><li>' . esc_html__( 'Activate the plugin and open Settings > Updates Manager.', 'jmwv-updates-manager' ) . '</li></ol>',
+				'changelog'    => '' !== $release['notes'] ? $this->markdown( $release['notes'] ) : '<p>' . esc_html__( 'See the release page on GitHub.', 'jmwv-updates-manager' ) . '</p>',
 			),
 		);
+
+		if ( '' !== $release['published'] ) {
+			$info['last_updated'] = $release['published'];
+		}
+
+		return (object) $info;
+	}
+
+	/**
+	 * Turn GitHub release notes into safe HTML: headings, bullet lists, bold and inline code.
+	 *
+	 * Everything is escaped first; only these few tags are ever added.
+	 *
+	 * @param string $text Markdown release notes.
+	 * @return string
+	 */
+	private function markdown( $text ) {
+		$out  = '';
+		$list = false;
+
+		foreach ( preg_split( '/\r\n|\r|\n/', $text ) as $line ) {
+			$line    = trim( $line );
+			$is_item = (bool) preg_match( '/^[-*]\s+(.+)$/', $line, $item );
+
+			if ( $list && ! $is_item ) {
+				$out .= '</ul>';
+				$list = false;
+			}
+
+			if ( $is_item ) {
+				if ( ! $list ) {
+					$out .= '<ul>';
+					$list = true;
+				}
+				$out .= '<li>' . $this->inline( $item[1] ) . '</li>';
+			} elseif ( preg_match( '/^#{1,6}\s+(.+)$/', $line, $heading ) ) {
+				$out .= '<h4>' . $this->inline( $heading[1] ) . '</h4>';
+			} elseif ( '' !== $line ) {
+				$out .= '<p>' . $this->inline( $line ) . '</p>';
+			}
+		}
+
+		return $list ? $out . '</ul>' : $out;
+	}
+
+	/**
+	 * Escape a line of text, then add bold and inline code.
+	 *
+	 * @param string $text Raw text.
+	 * @return string
+	 */
+	private function inline( $text ) {
+		$text = esc_html( $text );
+		$text = preg_replace( '/\*\*([^*]+)\*\*/', '<strong>$1</strong>', $text );
+
+		return preg_replace( '/`([^`]+)`/', '<code>$1</code>', $text );
 	}
 
 	/**
@@ -211,11 +288,14 @@ class GitHubUpdater {
 			}
 		}
 
+		$published = isset( $data['published_at'] ) ? strtotime( (string) $data['published_at'] ) : false;
+
 		return array(
-			'version' => $version,
-			'package' => $package,
-			'url'     => 0 === strpos( $page, 'https://github.com/' . self::REPO . '/' ) ? $page : 'https://github.com/' . self::REPO,
-			'notes'   => isset( $data['body'] ) ? (string) $data['body'] : '',
+			'version'   => $version,
+			'package'   => $package,
+			'url'       => 0 === strpos( $page, 'https://github.com/' . self::REPO . '/' ) ? $page : 'https://github.com/' . self::REPO,
+			'notes'     => isset( $data['body'] ) ? (string) $data['body'] : '',
+			'published' => $published ? gmdate( 'Y-m-d g:ia', $published ) . ' GMT' : '',
 		);
 	}
 }

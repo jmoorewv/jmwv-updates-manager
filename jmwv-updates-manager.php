@@ -2,7 +2,7 @@
 /**
  * Plugin Name:       JMWV Updates Manager
  * Description:       Lightweight control over core, plugin, theme and translation updates: disable them, make them manual-only, or let them run automatically.
- * Version:           1.0.0
+ * Version:           1.0.1
  * Requires at least: 6.0
  * Requires PHP:      7.4
  * Author:            Jonathan Moore
@@ -20,7 +20,7 @@ namespace JMooreWV\UpdatesManager;
 defined( 'ABSPATH' ) || exit;
 
 define( 'JMWV_UM_FILE', __FILE__ );
-define( 'JMWV_UM_VERSION', '1.0.0' ); // Keep in sync with the Version header above.
+define( 'JMWV_UM_VERSION', '1.0.1' ); // Keep in sync with the Version header above.
 
 require_once __DIR__ . '/src/Settings.php';
 require_once __DIR__ . '/src/Updates.php';
