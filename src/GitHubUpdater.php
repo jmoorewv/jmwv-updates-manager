@@ -263,39 +263,57 @@ class GitHubUpdater {
 		}
 
 		$data = json_decode( wp_remote_retrieve_body( $response ), true );
-		if ( ! is_array( $data ) || empty( $data['tag_name'] ) || empty( $data['zipball_url'] ) ) {
+		if ( ! is_array( $data ) ) {
 			return null;
 		}
 
-		$version = ltrim( (string) $data['tag_name'], 'vV' );
-		$package = (string) $data['zipball_url'];
-		$page    = isset( $data['html_url'] ) ? (string) $data['html_url'] : '';
+		$version = ltrim( $this->text( $data, 'tag_name' ), 'vV' );
+		$package = $this->text( $data, 'zipball_url' );
+		$page    = $this->text( $data, 'html_url' );
+		$repo    = preg_quote( self::REPO, '#' );
 
-		// Only trust a plain version number, and a package from this repository's GitHub API.
-		if ( ! preg_match( '/^\d+(\.\d+){1,3}$/', $version ) || 0 !== strpos( $package, 'https://api.github.com/repos/' . self::REPO . '/' ) ) {
+		// Only trust a plain version number, and a source package that is exactly this
+		// repository's zipball for a tag. The patterns are anchored, so "../" and
+		// look-alike hosts cannot slip through a prefix check.
+		if ( ! preg_match( '/^\d+(\.\d+){1,3}$/', $version ) || ! preg_match( '#^https://api\.github\.com/repos/' . $repo . '/zipball/[A-Za-z0-9][\w.-]*$#', $package ) ) {
 			return null;
 		}
 
 		// Prefer the clean zip attached to the release (no repo-only files such as
 		// images). A release without it falls back to the source zipball above.
-		$asset_prefix = 'https://github.com/' . self::REPO . '/releases/download/';
 		if ( ! empty( $data['assets'] ) && is_array( $data['assets'] ) ) {
 			foreach ( $data['assets'] as $asset ) {
-				if ( is_array( $asset ) && isset( $asset['name'], $asset['browser_download_url'] ) && self::SLUG . '.zip' === $asset['name'] && 0 === strpos( (string) $asset['browser_download_url'], $asset_prefix ) ) {
-					$package = (string) $asset['browser_download_url'];
+				if ( ! is_array( $asset ) || self::SLUG . '.zip' !== $this->text( $asset, 'name' ) ) {
+					continue;
+				}
+
+				$url = $this->text( $asset, 'browser_download_url' );
+				if ( preg_match( '#^https://github\.com/' . $repo . '/releases/download/[A-Za-z0-9][\w.-]*/' . preg_quote( self::SLUG, '#' ) . '\.zip$#', $url ) ) {
+					$package = $url;
 					break;
 				}
 			}
 		}
 
-		$published = isset( $data['published_at'] ) ? strtotime( (string) $data['published_at'] ) : false;
+		$published = strtotime( $this->text( $data, 'published_at' ) );
 
 		return array(
 			'version'   => $version,
 			'package'   => $package,
-			'url'       => 0 === strpos( $page, 'https://github.com/' . self::REPO . '/' ) ? $page : 'https://github.com/' . self::REPO,
-			'notes'     => isset( $data['body'] ) ? (string) $data['body'] : '',
+			'url'       => preg_match( '#^https://github\.com/' . $repo . '/releases/tag/[A-Za-z0-9][\w.-]*$#', $page ) ? $page : 'https://github.com/' . self::REPO,
+			'notes'     => $this->text( $data, 'body' ),
 			'published' => $published ? gmdate( 'Y-m-d g:ia', $published ) . ' GMT' : '',
 		);
+	}
+
+	/**
+	 * A string value from decoded JSON, or '' if it is missing or not a string.
+	 *
+	 * @param array  $data Decoded JSON object.
+	 * @param string $key  Key to read.
+	 * @return string
+	 */
+	private function text( array $data, $key ) {
+		return ( isset( $data[ $key ] ) && is_string( $data[ $key ] ) ) ? $data[ $key ] : '';
 	}
 }
